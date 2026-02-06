@@ -1,181 +1,122 @@
 use anchor_lang::prelude::*;
 
-/* =====================================
-   PROGRAM ID
-===================================== */
-declare_id!("E31mecmt7WbRrRgSWDChV31D7tENN2WDKLnTuagWjJyu");
+declare_id!("11111111111111111111111111111111");
 
-/* =====================================
-   PROGRAM ENTRYPOINT
-===================================== */
 #[program]
 pub mod gatherfi {
     use super::*;
 
-    /* ---------------------------------
-       CREATE EVENT
-    ---------------------------------- */
-    pub fn create_event(
-        ctx: Context<CreateEvent>,
+    /// Initialize the program (runs once)
+    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        state.admin = ctx.accounts.admin.key();
+        Ok(())
+    }
+
+    /// Create a new group
+    pub fn create_group(
+        ctx: Context<CreateGroup>,
         name: String,
-        city: String,
-        category: String,
-        target_amount: u64,
     ) -> Result<()> {
-        let event = &mut ctx.accounts.event;
-
-        event.organizer = ctx.accounts.organizer.key();
-        event.name = name;
-        event.city = city;
-        event.category = category;
-        event.target_amount = target_amount;
-        event.total_raised = 0;
-        event.status = EventStatus::Fundraising;
-        event.created_at = Clock::get()?.unix_timestamp;
-
+        let group = &mut ctx.accounts.group;
+        group.admin = ctx.accounts.admin.key();
+        group.name = name;
+        group.balance = 0;
         Ok(())
     }
 
-    /* ---------------------------------
-       CONTRIBUTE TO EVENT
-    ---------------------------------- */
-    pub fn contribute(
-        ctx: Context<Contribute>,
-        amount: u64,
-    ) -> Result<()> {
-        let event = &mut ctx.accounts.event;
-
-        require!(
-            event.status == EventStatus::Fundraising,
-            GatherFiError::InvalidEventStatus
+    /// Deposit lamports into the group
+    pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        let ix = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.user.key(),
+            &ctx.accounts.group.key(),
+            amount,
         );
 
-        **ctx.accounts.contributor.try_borrow_mut_lamports()? -= amount;
-        **ctx.accounts.escrow.try_borrow_mut_lamports()? += amount;
+        anchor_lang::solana_program::program::invoke(
+            &ix,
+            &[
+                ctx.accounts.user.to_account_info(),
+                ctx.accounts.group.to_account_info(),
+            ],
+        )?;
 
-        event.total_raised += amount;
-
+        ctx.accounts.group.balance += amount;
         Ok(())
     }
 
-    /* ---------------------------------
-       CANCEL EVENT
-    ---------------------------------- */
-    pub fn cancel_event(ctx: Context<CancelEvent>) -> Result<()> {
-        let event = &mut ctx.accounts.event;
+    /// Withdraw lamports (admin only)
+    pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
+        let group = &mut ctx.accounts.group;
 
         require!(
-            event.organizer == ctx.accounts.organizer.key(),
-            GatherFiError::Unauthorized
+            ctx.accounts.admin.key() == group.admin,
+            CustomError::Unauthorized
         );
 
-        event.status = EventStatus::Cancelled;
+        **group.to_account_info().try_borrow_mut_lamports()? -= amount;
+        **ctx.accounts.admin.to_account_info().try_borrow_mut_lamports()? += amount;
 
+        group.balance -= amount;
         Ok(())
     }
 }
 
-/* =====================================
-   ACCOUNTS
-===================================== */
+/* ===================== ACCOUNTS ===================== */
 
 #[derive(Accounts)]
-#[instruction(name: String)]
-pub struct CreateEvent<'info> {
-    #[account(
-        init,
-        payer = organizer,
-        space = Event::SPACE,
-        seeds = [b"event", organizer.key().as_ref(), name.as_bytes()],
-        bump
-    )]
-    pub event: Account<'info, Event>,
-
+pub struct Initialize<'info> {
+    #[account(init, payer = admin, space = 8 + 32)]
+    pub state: Account<'info, State>,
     #[account(mut)]
-    pub organizer: Signer<'info>,
-
+    pub admin: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct Contribute<'info> {
+pub struct CreateGroup<'info> {
+    #[account(init, payer = admin, space = 8 + 32 + 64 + 8)]
+    pub group: Account<'info, Group>,
     #[account(mut)]
-    pub event: Account<'info, Event>,
-
-    /// CHECK: Escrow PDA
-    #[account(
-        mut,
-        seeds = [b"escrow", event.key().as_ref()],
-        bump
-    )]
-    pub escrow: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    pub contributor: Signer<'info>,
+    pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct CancelEvent<'info> {
+pub struct Deposit<'info> {
     #[account(mut)]
-    pub event: Account<'info, Event>,
-
-    pub organizer: Signer<'info>,
+    pub group: Account<'info, Group>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
-/* =====================================
-   STATE
-===================================== */
+#[derive(Accounts)]
+pub struct Withdraw<'info> {
+    #[account(mut)]
+    pub group: Account<'info, Group>,
+    #[account(mut)]
+    pub admin: Signer<'info>,
+}
+
+/* ===================== STATE ===================== */
 
 #[account]
-pub struct Event {
-    pub organizer: Pubkey,
+pub struct State {
+    pub admin: Pubkey,
+}
+
+#[account]
+pub struct Group {
+    pub admin: Pubkey,
     pub name: String,
-    pub city: String,
-    pub category: String,
-    pub target_amount: u64,
-    pub total_raised: u64,
-    pub status: EventStatus,
-    pub created_at: i64,
+    pub balance: u64,
 }
 
-/* =====================================
-   ENUMS
-===================================== */
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
-pub enum EventStatus {
-    Fundraising,
-    Live,
-    Completed,
-    Cancelled,
-}
-
-/* =====================================
-   SPACE CALCULATION
-===================================== */
-
-impl Event {
-    pub const SPACE: usize =
-        8 +     // discriminator
-        32 +    // organizer
-        4 + 64 + // name
-        4 + 32 + // city
-        4 + 32 + // category
-        8 +     // target_amount
-        8 +     // total_raised
-        1 +     // status
-        8;      // created_at
-}
-
-/* =====================================
-   ERRORS
-===================================== */
+/* ===================== ERRORS ===================== */
 
 #[error_code]
-pub enum GatherFiError {
-    #[msg("Unauthorized action")]
+pub enum CustomError {
+    #[msg("You are not authorized to perform this action")]
     Unauthorized,
-
-    #[msg("Invalid event status")]
-    InvalidEventStatus,
 }
