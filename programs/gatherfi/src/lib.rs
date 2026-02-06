@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, MintTo, Transfer};
+use anchor_spl::token::{
+    self, Mint, Token, TokenAccount, MintTo, Transfer,
+};
 
 declare_id!("E31mecmt7WbRrRgSWDChV31D7tENN2WDKLnTuagWjJyu");
 
@@ -27,19 +29,17 @@ pub mod gatherfi {
     }
 
     pub fn buy_ticket(ctx: Context<BuyTicket>) -> Result<()> {
-        let price = ctx.accounts.event.ticket_price;
+        let event = &mut ctx.accounts.event;
 
-        // take payment
-        token::transfer(ctx.accounts.pay_ctx(), price)?;
+        require!(event.active, ErrorCode::EventInactive);
+        require!(event.tickets_sold < event.max_tickets, ErrorCode::SoldOut);
 
-        // mint NFT ticket
-        let event_key = ctx.accounts.event.key();
-        let bump = ctx.bumps.mint_authority;
+        token::transfer(ctx.accounts.pay_ctx(), event.ticket_price)?;
 
         let seeds = &[
             b"mint-authority",
-            event_key.as_ref(),
-            &[bump],
+            event.key().as_ref(),
+            &[ctx.bumps.mint_authority],
         ];
 
         token::mint_to(
@@ -55,15 +55,12 @@ pub mod gatherfi {
             1,
         )?;
 
-        let event = &mut ctx.accounts.event;
-        let ticket = &mut ctx.accounts.ticket_account;
-
-        ticket.owner = ctx.accounts.buyer.key();
-        ticket.event = event_key;
-        ticket.claimed = false;
+        ctx.accounts.ticket_account.owner = ctx.accounts.buyer.key();
+        ctx.accounts.ticket_account.event = event.key();
+        ctx.accounts.ticket_account.claimed = false;
 
         event.tickets_sold += 1;
-        event.total_revenue += price;
+        event.total_revenue += event.ticket_price;
 
         Ok(())
     }
@@ -78,28 +75,7 @@ pub mod gatherfi {
         let backer_pool = event.total_revenue * 60 / 100;
         let payout = backer_pool / event.tickets_sold as u64;
 
-        let event_key = event.key();
-        let bump = ctx.bumps.escrow_authority;
-
-        let seeds = &[
-            b"escrow-authority",
-            event_key.as_ref(),
-            &[bump],
-        ];
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.escrow_usdc.to_account_info(),
-                    to: ctx.accounts.owner_usdc.to_account_info(),
-                    authority: ctx.accounts.escrow_authority.to_account_info(),
-                },
-                &[seeds],
-            ),
-            payout,
-        )?;
-
+        token::transfer(ctx.accounts.transfer_ctx(), payout)?;
         ticket.claimed = true;
         Ok(())
     }
@@ -109,30 +85,10 @@ pub mod gatherfi {
 
         let max = event.total_revenue * 35 / 100;
         let available = max.saturating_sub(event.organizer_withdrawn);
+
         require!(available > 0, ErrorCode::NothingToWithdraw);
 
-        let event_key = event.key();
-        let bump = ctx.bumps.escrow_authority;
-
-        let seeds = &[
-            b"escrow-authority",
-            event_key.as_ref(),
-            &[bump],
-        ];
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.escrow_usdc.to_account_info(),
-                    to: ctx.accounts.organizer_usdc.to_account_info(),
-                    authority: ctx.accounts.escrow_authority.to_account_info(),
-                },
-                &[seeds],
-            ),
-            available,
-        )?;
-
+        token::transfer(ctx.accounts.transfer_ctx(), available)?;
         event.organizer_withdrawn += available;
         Ok(())
     }
@@ -142,30 +98,10 @@ pub mod gatherfi {
 
         let max = event.total_revenue * 5 / 100;
         let available = max.saturating_sub(event.platform_withdrawn);
+
         require!(available > 0, ErrorCode::NothingToWithdraw);
 
-        let event_key = event.key();
-        let bump = ctx.bumps.escrow_authority;
-
-        let seeds = &[
-            b"escrow-authority",
-            event_key.as_ref(),
-            &[bump],
-        ];
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.escrow_usdc.to_account_info(),
-                    to: ctx.accounts.platform_usdc.to_account_info(),
-                    authority: ctx.accounts.escrow_authority.to_account_info(),
-                },
-                &[seeds],
-            ),
-            available,
-        )?;
-
+        token::transfer(ctx.accounts.transfer_ctx(), available)?;
         event.platform_withdrawn += available;
         Ok(())
     }
@@ -188,10 +124,12 @@ pub struct BuyTicket<'info> {
     pub event: Account<'info, Event>,
     #[account(mut)]
     pub buyer: Signer<'info>,
+
     #[account(mut)]
     pub buyer_usdc: Account<'info, TokenAccount>,
     #[account(mut)]
     pub escrow_usdc: Account<'info, TokenAccount>,
+
     #[account(mut)]
     pub ticket_mint: Account<'info, Mint>,
     #[account(mut)]
@@ -200,12 +138,11 @@ pub struct BuyTicket<'info> {
     #[account(
         init,
         payer = buyer,
-        space = 8 + TicketAccount::SIZE,
-        seeds = [b"ticket", event.key().as_ref(), buyer.key().as_ref()],
-        bump
+        space = 8 + TicketAccount::SIZE
     )]
     pub ticket_account: Account<'info, TicketAccount>,
 
+    /// CHECK: PDA mint authority
     #[account(
         seeds = [b"mint-authority", event.key().as_ref()],
         bump
@@ -232,7 +169,7 @@ impl<'info> BuyTicket<'info> {
 #[derive(Accounts)]
 pub struct ClaimBackerProfit<'info> {
     pub event: Account<'info, Event>,
-    #[account(mut, has_one = owner)]
+    #[account(mut, has_one = owner, has_one = event)]
     pub ticket_account: Account<'info, TicketAccount>,
     pub owner: Signer<'info>,
 
@@ -241,13 +178,20 @@ pub struct ClaimBackerProfit<'info> {
     #[account(mut)]
     pub owner_usdc: Account<'info, TokenAccount>,
 
-    #[account(
-        seeds = [b"escrow-authority", event.key().as_ref()],
-        bump
-    )]
-    pub escrow_authority: UncheckedAccount<'info>,
-
     pub token_program: Program<'info, Token>,
+}
+
+impl<'info> ClaimBackerProfit<'info> {
+    fn transfer_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
+        CpiContext::new(
+            self.token_program.to_account_info(),
+            Transfer {
+                from: self.escrow_usdc.to_account_info(),
+                to: self.owner_usdc.to_account_info(),
+                authority: self.event.to_account_info(),
+            },
+        )
+    }
 }
 
 #[derive(Accounts)]
@@ -261,13 +205,20 @@ pub struct WithdrawOrganizer<'info> {
     #[account(mut)]
     pub organizer_usdc: Account<'info, TokenAccount>,
 
-    #[account(
-        seeds = [b"escrow-authority", event.key().as_ref()],
-        bump
-    )]
-    pub escrow_authority: UncheckedAccount<'info>,
-
     pub token_program: Program<'info, Token>,
+}
+
+impl<'info> WithdrawOrganizer<'info> {
+    fn transfer_ctx(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
+        CpiContext::new(
+            self.token_program.to_account_info(),
+            Transfer {
+                from: self.escrow_usdc.to_account_info(),
+                to: self.organizer_usdc.to_account_info(),
+                authority: self.event.to_account_info(),
+            },
+        )
+    }
 }
 
 #[derive(Accounts)]
@@ -279,12 +230,6 @@ pub struct WithdrawPlatform<'info> {
     pub escrow_usdc: Account<'info, TokenAccount>,
     #[account(mut)]
     pub platform_usdc: Account<'info, TokenAccount>,
-
-    #[account(
-        seeds = [b"escrow-authority", event.key().as_ref()],
-        bump
-    )]
-    pub escrow_authority: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -305,7 +250,8 @@ pub struct Event {
 }
 
 impl Event {
-    pub const SIZE: usize = 32 + 4 + 64 + 8 + 4 + 4 + 1 + 8 + 8 + 8;
+    pub const SIZE: usize =
+        32 + 4 + 64 + 8 + 4 + 4 + 1 + 8 + 8 + 8;
 }
 
 #[account]
