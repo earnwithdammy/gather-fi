@@ -8,11 +8,14 @@ skip-lint = false
 [programs.localnet]
 gatherfi = "E31mecmt7WbRrRgSWDChV31D7tENN2WDKLnTuagWjJyu"
 
+[programs.devnet]
+gatherfi = "E31mecmt7WbRrRgSWDChV31D7tENN2WDKLnTuagWjJyu"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
