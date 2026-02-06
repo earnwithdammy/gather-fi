@@ -9,7 +9,7 @@ describe("gatherfi", () => {
 
   const program = anchor.workspace.Gatherfi as Program<Gatherfi>;
 
-  it("creates an event", async () => {
+  it("initializes the program", async () => {
     const organizer = provider.wallet;
 
     const name = "Lagos Tech Meetup";
@@ -30,7 +30,7 @@ describe("gatherfi", () => {
     );
 
     await program.methods
-      .createEvent(
+      .initialize(
         name,
         city,
         category,

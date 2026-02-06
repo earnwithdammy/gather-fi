@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 /* =====================================
    PROGRAM ID
 ===================================== */
-declare_id!("E31mecmt7WbRrRgSWDchV31dTENN2WDKInTuagWjJyu");
+declare_id!("E31mecmt7WbRrRgSWDChV31D7tENN2WDKLnTuagWjJyu");
 
 /* =====================================
    PROGRAM ENTRYPOINT
