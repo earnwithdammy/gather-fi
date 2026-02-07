@@ -1,10 +1,10 @@
 'use client'
 
-import { useEvents } from './context/EventContext'
+import { useEvents } from '../context/EventContext'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { Ticket, TrendingUp, Users, DollarSign, Calendar, MapPin } from 'lucide-react'
 import Link from 'next/link'
-import LoadingSpinner from './components/LoadingSpinner'
+import LoadingSpinner from '../components/LoadingSpinner'
 
 export default function DashboardPage() {
   const { myEvents, myTickets, loading } = useEvents()

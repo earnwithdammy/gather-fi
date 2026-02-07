@@ -1,4 +1,4 @@
-import CreateEventForm from '@/components/CreateEventForm'
+import CreateEventForm from '../components/CreateEventForm'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
