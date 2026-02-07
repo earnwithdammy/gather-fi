@@ -35,20 +35,24 @@ pub mod gatherfi {
     /* ================= BUY TICKET ================= */
 
     pub fn buy_ticket(ctx: Context<BuyTicket>) -> Result<()> {
-        let event = &mut ctx.accounts.event;
-
-        require!(event.active, ErrorCode::EventInactive);
-        require!(event.tickets_sold < event.max_tickets, ErrorCode::SoldOut);
-
-        let ticket_price = event.ticket_price; // Store in local variable to avoid borrow issues
-
-        // Pay into vault - use the local variable
+        // First, extract all the data we need from event before mutable operations
+        let is_active = ctx.accounts.event.active;
+        let tickets_sold = ctx.accounts.event.tickets_sold;
+        let max_tickets = ctx.accounts.event.max_tickets;
+        let ticket_price = ctx.accounts.event.ticket_price;
+        
+        // Check conditions using the extracted data
+        require!(is_active, ErrorCode::EventInactive);
+        require!(tickets_sold < max_tickets, ErrorCode::SoldOut);
+        
+        // Pay into vault - use the extracted ticket_price
         token::transfer(
             ctx.accounts.pay_ctx(),
             ticket_price,
         )?;
 
-        // Store event key in a variable to avoid temporary value issue
+        // Now we can mutate the event
+        let event = &mut ctx.accounts.event;
         let event_key = event.key();
         let seeds = &[
             b"mint-authority",
@@ -56,6 +60,7 @@ pub mod gatherfi {
             &[ctx.bumps.mint_authority],
         ];
 
+        // Mint NFT ticket
         token::mint_to(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -69,6 +74,7 @@ pub mod gatherfi {
             1,
         )?;
 
+        // Update event state
         event.tickets_sold += 1;
         event.total_revenue += ticket_price;
 
