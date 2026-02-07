@@ -25,7 +25,7 @@ FROM node:18-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=8080
+ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Copy built application from builder
@@ -37,7 +37,7 @@ COPY --from=builder /app/package.json ./package.json
 # Install production dependencies only (for node_modules)
 COPY --from=builder /app/node_modules ./node_modules
 
-EXPOSE 8080
+EXPOSE 3000
 
 # Start the application
 CMD ["node", "server.js"]
