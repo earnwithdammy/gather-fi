@@ -40,16 +40,19 @@ pub mod gatherfi {
         require!(event.active, ErrorCode::EventInactive);
         require!(event.tickets_sold < event.max_tickets, ErrorCode::SoldOut);
 
-        // Pay into vault
+        let ticket_price = event.ticket_price; // Store in local variable to avoid borrow issues
+
+        // Pay into vault - use the local variable
         token::transfer(
             ctx.accounts.pay_ctx(),
-            event.ticket_price,
+            ticket_price,
         )?;
 
-        // Mint NFT ticket
+        // Store event key in a variable to avoid temporary value issue
+        let event_key = event.key();
         let seeds = &[
             b"mint-authority",
-            event.key().as_ref(),
+            event_key.as_ref(),
             &[ctx.bumps.mint_authority],
         ];
 
@@ -67,7 +70,7 @@ pub mod gatherfi {
         )?;
 
         event.tickets_sold += 1;
-        event.total_revenue += event.ticket_price;
+        event.total_revenue += ticket_price;
 
         Ok(())
     }
@@ -80,9 +83,11 @@ pub mod gatherfi {
         let pool = event.total_revenue * 60 / 100;
         let payout = pool / event.tickets_sold as u64;
 
+        // Store event key in a variable to avoid temporary value issue
+        let event_key = event.key();
         let seeds = &[
             b"vault-authority",
-            event.key().as_ref(),
+            event_key.as_ref(),
             &[ctx.bumps.vault_authority],
         ];
 
@@ -111,9 +116,11 @@ pub mod gatherfi {
         let available = max.saturating_sub(event.organizer_withdrawn);
         require!(available > 0, ErrorCode::NothingToWithdraw);
 
+        // Store event key in a variable to avoid temporary value issue
+        let event_key = event.key();
         let seeds = &[
             b"vault-authority",
-            event.key().as_ref(),
+            event_key.as_ref(),
             &[ctx.bumps.vault_authority],
         ];
 
