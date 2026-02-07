@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import WalletProvider from './components/WalletProvider'
+import Navbar from './components/Navbar'
+import Footer from './components/Footer'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -16,23 +19,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} bg-gray-900 text-white`}>
-        <div className="min-h-screen">
-          <nav className="border-b border-gray-800 bg-gray-900/90">
-            <div className="container mx-auto px-4 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
-                    GatherFi <span className="text-sm">🇳🇬</span>
-                  </h1>
-                </div>
-              </div>
-            </div>
-          </nav>
-          <main className="container mx-auto px-4 py-8">
-            {children}
-          </main>
-        </div>
+      <body className={`${inter.className} bg-gradient-to-br from-gray-900 via-gray-900 to-gray-950`}>
+        <WalletProvider>
+          <div className="min-h-screen flex flex-col">
+            <Navbar />
+            <main className="flex-grow">
+              {children}
+            </main>
+            <Footer />
+          </div>
+        </WalletProvider>
       </body>
     </html>
   )
