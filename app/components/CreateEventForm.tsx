@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react' // Add useEffect
 import { PlusCircle } from 'lucide-react'
 import { useGatherFiProgram } from '../lib/anchor'
 import { BN } from '@coral-xyz/anchor'
@@ -8,11 +8,16 @@ import { PublicKey, SystemProgram } from '@solana/web3.js'
 import { useWallet } from '@solana/wallet-adapter-react'
 
 export default function CreateEventForm() {
-  const { publicKey, sendTransaction } = useWallet()
+  const { publicKey, sendTransaction, connected, wallet } = useWallet() // Add connected and wallet
   const program = useGatherFiProgram()
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [messageType, setMessageType] = useState<'success' | 'error' | null>(null)
+  const [mounted, setMounted] = useState(false) // Add mounted state
+  
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   
   const [formData, setFormData] = useState({
     name: '',
@@ -24,6 +29,18 @@ export default function CreateEventForm() {
     eventDate: '',
     exchangeRate: '1500',
   })
+
+  // Don't render until mounted
+  if (!mounted) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-8 text-center">
+          <h2 className="text-3xl font-bold mb-2">Create Your Naija Event</h2>
+          <p className="text-gray-400">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   const showMessage = (text: string, type: 'success' | 'error') => {
     setMessage(text)
@@ -50,8 +67,14 @@ export default function CreateEventForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!program || !publicKey) {
-      showMessage('Please connect wallet first', 'error')
+    
+    // Check for TRUE connection (not just wallet detected)
+    if (!program || !publicKey || !connected) {
+      if (wallet && !connected) {
+        showMessage('Wallet detected but not connected. Please complete the connection in your wallet.', 'error')
+      } else {
+        showMessage('Please connect wallet first', 'error')
+      }
       return
     }
 
@@ -109,12 +132,24 @@ export default function CreateEventForm() {
     }
   }
 
+  // Check if user can submit
+  const canSubmit = !loading && publicKey && connected && program
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8 text-center">
         <h2 className="text-3xl font-bold mb-2">Create Your Naija Event</h2>
         <p className="text-gray-400">Fund your event with community support</p>
       </div>
+
+      {/* Connection Status */}
+      {wallet && !connected && (
+        <div className="mb-6 p-4 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
+          <p className="text-yellow-300">
+            ⚠️ Wallet detected but not connected. Please complete the connection.
+          </p>
+        </div>
+      )}
 
       {/* Message Display */}
       {message && (
@@ -128,21 +163,31 @@ export default function CreateEventForm() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* ... rest of the form stays exactly the same ... */}
+        {/* ... rest of your form fields ... */}
         
         <button
           type="submit"
-          disabled={loading}
+          disabled={!canSubmit}
           className={`w-full py-4 rounded-lg font-bold text-lg transition flex items-center justify-center space-x-2 ${
-            loading
-              ? 'bg-gray-600 cursor-not-allowed'
-              : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90'
+            canSubmit
+              ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:opacity-90'
+              : 'bg-gray-600 cursor-not-allowed'
           }`}
         >
           {loading ? (
             <>
               <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
               <span>Creating Event...</span>
+            </>
+          ) : !publicKey ? (
+            <>
+              <PlusCircle className="w-6 h-6" />
+              <span>Please Connect Wallet</span>
+            </>
+          ) : !connected ? (
+            <>
+              <PlusCircle className="w-6 h-6" />
+              <span>Complete Wallet Connection</span>
             </>
           ) : (
             <>
